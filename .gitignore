@@ -1,0 +1,20 @@
+# AI reference file, must never be tracked
+Project.md
+# Agent work log, must never be tracked
+Logs.txt
+# Conda environment
+envs/
+# Simulation logs
+logs/
+# Python bytecode cache
+__pycache__/
+# Compiled Python files
+*.pyc
+# AI reference notes, never tracked
+docs/*.md
+# AI reference / next-session plan, never tracked
+TODO.md
+# AI reference draft, never tracked (in case it appears)
+Draft.md
+# AI reference draft, never tracked (in case it appears)
+Thesis.md
