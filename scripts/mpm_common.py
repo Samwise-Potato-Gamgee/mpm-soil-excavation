@@ -168,6 +168,8 @@ class SceneAConfig:
 
     diameter: float = 0.15                 # D [m]
     voxel_over_D: float = 5.0              # D / voxel ; >= 5 rule of thumb (UNVERIFIED)
+    voxel_override: float | None = None    # Step 6c: explicit voxel size [m]; None = D/voxel_over_D
+    ground_half_override: float | None = None  # Step 6c: explicit ground half-extent [m]; None = 5D
     ppc: int = 2                           # particles per cell PER AXIS
     block_base_factor: float = 2.0         # soil block base = 2D x 2D
     block_height_factor: float = 2.5       # soil block height = 2.5D
@@ -184,7 +186,9 @@ class SceneAConfig:
     # ---- derived geometry / timing --------------------------------------------------------------
     @property
     def voxel(self) -> float:
-        """Grid voxel size [m]."""
+        """Grid voxel size [m].  An explicit ``voxel_override`` wins verbatim (no D/voxel routing)."""
+        if self.voxel_override is not None:
+            return float(self.voxel_override)
         return self.diameter / self.voxel_over_D
 
     @property
@@ -222,7 +226,9 @@ class SceneAConfig:
 
     @property
     def ground_half_xy(self) -> float:
-        """Ground box half-extent in x and y [m] = 5D."""
+        """Ground box half-extent in x and y [m] = 5D, or ``ground_half_override`` verbatim."""
+        if self.ground_half_override is not None:
+            return float(self.ground_half_override)
         return self.ground_half_factor * self.diameter
 
 

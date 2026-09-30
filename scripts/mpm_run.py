@@ -48,6 +48,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--duration", type=float, default=3.0, help="simulated seconds")
     p.add_argument("--frames", type=int, default=None, help="alternative to --duration: number of steps")
     p.add_argument("--voxel-over-D", type=float, default=5.0, help="resolution D/voxel (>=5)")
+    p.add_argument("--voxel", type=float, default=None,
+                   help="explicit voxel size [m]; overrides --voxel-over-D (default None = old behaviour)")
+    p.add_argument("--ground-half", type=float, default=None,
+                   help="explicit ground half-extent [m] in x and y (default None = old 5D behaviour)")
     p.add_argument("--ppc", type=int, default=2, help="particles per cell per axis")
     p.add_argument("--ground-friction", type=float, default=0.5,
                    help="ground collider Coulomb friction coefficient (default 0.5 = current behaviour)")
@@ -55,6 +59,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="soil internal friction angle [deg]; mu = tan(phi) (default 34.0 = current behaviour)")
     p.add_argument("--height-factor", type=float, default=2.5,
                    help="column height = height_factor * D (default 2.5 = current behaviour)")
+    p.add_argument("--dilatancy", type=float, default=None,
+                   help="explicit mpm dilatancy factor in [0,1] (0=non-associated, 1=associated); "
+                        "default None = current behaviour (0.0)")
+    p.add_argument("--strain-basis", default=None,
+                   help="explicit strain basis (P0, P1d, Q1, ...); default None = current behaviour (P0)")
     p.add_argument("--max-iterations", type=int, default=50)
     p.add_argument("--tolerance", type=float, default=1.0e-4)
     p.add_argument("--grid-type", default="dense", choices=["dense", "sparse"])
@@ -74,9 +83,18 @@ def main() -> None:
 
     soil = SoilParams(friction_angle_deg=args.soil_phi_deg)
     solver_params = SolverParams(grid_type=args.grid_type, max_iterations=args.max_iterations, tolerance=args.tolerance)
+    if args.dilatancy is not None:
+        soil.dilatancy = float(args.dilatancy)
+    if args.strain_basis is not None:
+        solver_params.strain_basis = str(args.strain_basis)
+    if args.voxel is not None and args.voxel_over_D != 5.0:
+        raise SystemExit("--voxel and a non-default --voxel-over-D are mutually exclusive; "
+                         "give only one of them")
     cfg = SceneAConfig(
         diameter=args.diameter,
         voxel_over_D=args.voxel_over_D,
+        voxel_override=args.voxel,
+        ground_half_override=args.ground_half,
         ppc=args.ppc,
         ground_friction=args.ground_friction,
         block_height_factor=args.height_factor,
@@ -159,6 +177,15 @@ def main() -> None:
             take_snapshot(schedule[snap_i])
             snap_i += 1
 
+    # ---- final state and escape diagnostics ----------------------------------------------------
+    # Read the settled cloud once, after the loop, for the escape/below-ground counts and to
+    # store the true final positions (snap_q only holds the scheduled snapshot times).
+    final_q, final_v = scene.snapshot()
+    n_escaped = int(np.count_nonzero(
+        (np.abs(final_q[:, 0]) > cfg.ground_half_xy) | (np.abs(final_q[:, 1]) > cfg.ground_half_xy)
+    ))
+    n_below = int(np.count_nonzero(final_q[:, 2] < -1.0e-3))
+
     # ---- save -----------------------------------------------------------------------------------
     out_path = os.path.join(log_dir, args.out_prefix + ".npz")
     np.savez_compressed(
@@ -179,6 +206,14 @@ def main() -> None:
         snap_t=np.asarray(snap_t),
         snap_q=np.asarray(snap_q),
         snap_v=np.asarray(snap_v),
+        # final state and escape diagnostics (Step 6c)
+        final_q=final_q.astype(np.float32),
+        final_v=final_v.astype(np.float32),
+        final_t=np.float64(cfg.duration),
+        n_escaped=np.int64(n_escaped),
+        n_below=np.int64(n_below),
+        dilatancy_used=np.float64(soil.dilatancy),
+        strain_basis_used=solver_params.strain_basis,
         # metadata
         scene=args.scene,
         diameter=np.float64(cfg.diameter),
@@ -209,6 +244,8 @@ def main() -> None:
         seed=np.int64(args.seed),
     )
     print(f"[run] wrote {out_path}", flush=True)
+    print(f"[run] n_escaped={n_escaped} n_below={n_below} (final_q, final_v, final_t saved)", flush=True)
+    print(f"[run] dilatancy_used={soil.dilatancy} strain_basis_used={solver_params.strain_basis}", flush=True)
     print(f"[run] N={model.particle_count} total_mass={scene.total_mass:.6f} kg "
           f"first_step_ms={1e3*step_times[0]:.1f} median_step_ms={1e3*float(np.median(step_times[1:])):.2f} "
           f"ms_per_sim_s={1e3*float(np.median(step_times[1:]))/dt:.0f}", flush=True)
